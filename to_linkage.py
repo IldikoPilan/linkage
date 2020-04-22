@@ -142,10 +142,11 @@ class Person:
     def add_sibling(self, pedigree, member_id, amount=1):
         for i in range(amount):
             if i:
-                member_id + str(i+1)
-            sibling = pedigree.get_member(member_id)
-            if sibling not in self.siblings:
-                self.siblings.append(sibling)
+                member_id = member_id + str(i+1)
+            if member_id != self.id: # exclude oneself present in children list
+                sibling = pedigree.get_member(member_id)
+                if sibling not in self.siblings:
+                    self.siblings.append(sibling)
 
     def update_side(self, pedigree, side_lemma, amount=1):
         """ Disambiguates family relation term with parent-side information.
@@ -153,7 +154,6 @@ class Person:
         """
         sides = {'mor': {'onkel':'morbror', 'tante':'moster', 'bestemor':'mormor', 'bestefar':'morfar'},
                  'far': {'onkel':'farbror', 'tante':'faster', 'bestemor':'farmor', 'bestefar':'farfar'}}
-        #for parent in sides.keys():
         if 'mor' in side_lemma:
             parent = 'mor'
         elif 'far' in side_lemma:
@@ -171,15 +171,19 @@ class Person:
                     pedigree.get_member(parent).add_parents(pedigree)
             # Related_to FAMILY-SELF/FAMILY -> separate?
             elif self.id in ['fetter', 'kusine']:
+                for p in pedigree.get_member(parent).siblings:
+                    print('\t', p.id)
                 parent_siblings = pedigree.get_member(parent).siblings
                 if len(parent_siblings) == 1 and parent_siblings[0] == 'søster':
                     self.mother = pedigree.get_member(sides[parent]['tante'])
                     self.father = pedigree.get_member('onkel')
                 else: # if ambiguous, brother assumed by default for parent
-                    self.mother = pedigree.get_member(sides[parent]['tante'])
-                    self.father = pedigree.get_member('onkel')
+                    self.mother = pedigree.get_member('tante')
+                    self.father = pedigree.get_member(sides[parent]['onkel'])
             else:
                 print('SIDE undefined for: ', self.id)
+        else:
+            print('Unknown SIDE: ', side_lemma)
 
 
 
@@ -261,6 +265,8 @@ class Pedigree:
         relation_info = read_relations(path_to_file)
         fam_terms = self.get_family_terms()
         for line in relation_info:
+            for p in self.get_member('far').siblings:
+                print('\t', p.id)
             relation, entity_tag_orig, entity_tok_orig, \
                 entity_tag_target, entity_tok_target = line
             # Lemmatize
