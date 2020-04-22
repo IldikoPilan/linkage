@@ -4,32 +4,32 @@ import os
 global variants
 global family_relations
 global ambiguous_side
-global ambiguous_gender
+global gender_info
 
 variants = {'broder': 'bror', 
             'fader':'far',
             'mor' : 'moder', 
-            'fett':'fetter'     # UDPipe tokenization issue
+            'fett':'fetter'     # fixes UDPipe tokenization issue
             }
 
 family_relations = {
     ('partner', 'pasient') : ['datter', 'sønn', 'barn'],
     ('mor', 'far') : ['pasient', 'søster', 'halvsøster', 'bror', 'halvbror'],
-    #('bestemor', 'bestefar'): ['mor', 'far', 'tante', 'onkel'],
     ('mormor', 'morfar') : ['mor', 'tante', 'onkel', 'moster', 'morbror'],
     ('farmor', 'farfar') : ['far', 'tante', 'onkel', 'faster', 'farbror'],
-    #('tante', 'onkel'): ['kusine', 'fetter'],
     ('faster', 'onkel') : ['kusine', 'fetter'],
     ('moster', 'onkel') : ['kusine', 'fetter'],
     ('tante', 'farbror') : ['kusine', 'fetter'],
     ('tante', 'morbror') : ['kusine', 'fetter'],
-    #('søsken', 'svigersøsken'): ['niese', 'nevø'],
     ('søster', 'svigerbror') : ['niese', 'nevø'],
-    ('svigersøster', 'bror') : ['niese', 'nevø']
-    }
+    ('svigersøster', 'bror') : ['niese', 'nevø']}
 
 ambiguous_side = ['bestemor', 'bestefar','tante', 'onkel', 'kusine', 'fetter', 'niese', 'nevø']
-ambiguous_gender = ['barn', 'søsken', 'forelder'] 
+gender_info = {'2' : ['mor', 'søster', 'datter', 'tante', 'faster', 'moster',
+                      'niese', 'kone', 'hustru', 'kusine'],
+               '1' : ['far', 'bror', 'sønn', 'onkel', 'farbror', 'morbror', 
+                      'nevø', 'man', 'husbond', 'fetter'],
+               '0' : ['barn', 'søsken', 'forelder']}
 amounts = {'en':1, 'to':2, 'tre':3, 'fire':4, 'fem':5}
 
 
@@ -43,13 +43,11 @@ def read_relations(path_to_file):
         lines = f.readlines()
         for line in lines:
             if line.startswith("# sent_id =  "):
-                #sent_id += 1
                 continue
             elif line == "\n":
                 continue
             elif line.startswith("# text =  "):
                 sent = line[10:-1]
-                #sentences[sent_id] = sent
             else:
                 line_elem = line.strip().split("\t")
                 relation = line_elem[1]
@@ -64,12 +62,12 @@ def read_relations(path_to_file):
 class Person:
     def __init__(self, person_id):
         self.id = person_id
-        self.father = 0
-        self.mother = 0
+        self.father = 0             # 0=unknown
+        self.mother = 0             # 0=unknown
         self.siblings = []
-        self.gender = None
-        self.index_cond_val = 0
-        self.other_conditions = {} # {cond_name: 0 / 1 / 2}
+        self.gender = None          # 0=unknown / 1=male / 2=female
+        self.phenotype = 0          # 0=unknown / 1=negative / 2=positive
+        self.conditions = {}
     
     def __str__(self):
         if self.father:
@@ -80,8 +78,9 @@ class Person:
             mother = self.mother.id
         else:
             mother = self.mother
-        out = '{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}'.format(self.id, father, mother, self.gender, self.index_cond_val, '\t'.join(['{}'.format(cond) 
-                                            for (cond, val) in self.other_conditions.items()]))
+        out = '{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}'.format(self.id, father, mother, 
+                                    self.gender, self.phenotype, '\t'.join(['{}'.format(cond) 
+                                                for (cond, val) in self.conditions.items()]))
         return out
 
     def get_gender(self):
@@ -90,11 +89,6 @@ class Person:
         E.g. 0: forelder, sysken, tvilling, barn, kusin
         """
         gender = 0
-        gender_info = {'2' : ['mor', 'søster', 'datter', 'tante', 'faster', 'moster',
-                              'niese', 'kone', 'hustru', 'kusine'],
-                       '1' : ['far', 'bror', 'sønn', 'onkel', 'farbror', 'morbror', 
-                              'nevø', 'man', 'husbond', 'fetter'],
-                       '0' : ambiguous_gender}
         for gender_type in gender_info:
             if self.id in gender_info[gender_type]:
                 return int(gender_type)
@@ -104,13 +98,11 @@ class Person:
                                           and not self.id.startswith('ver'):
                     self.gender = int(gender_type)
                     return int(gender_type)
-                #else:
-                    #self.gender = gender
         return gender
 
     def get_cond_val(self, entity_lem_orig, non_conditions):
         # TO DO: add NEGATION tag
-        if entity_lem_orig in non_conditions:  # TO DO: add more terms?
+        if entity_lem_orig in non_conditions:  
             return 1
         return 2
 
@@ -119,13 +111,13 @@ class Person:
         Distinguishes index conditions from other conditions and
         non-conditions. Only limited lexical variation handling.
         """ 
-        non_conditions = ['frisk', 'gen-negativ', 'negativ', 'gravid', 'live'] # TO DO: add terms?
-        index_cond_terms =  ['mutasjon', 'genbær']                     # TO DO: add terms?
+        non_conditions = ['frisk', 'gen-negativ', 'negativ', 'gravid', 'live']  # TO DO: add terms?
+        index_cond_terms =  ['mutasjon', 'genbær']                              # TO DO: add terms?
         cond_val = self.get_cond_val(entity_lem_orig, non_conditions)
         if entity_lem_orig in index_cond_terms or entity_lem_orig in non_conditions:
-            self.index_cond_val = cond_val            
+            self.phenotype = cond_val            
         elif entity_lem_orig:
-            self.other_conditions[entity_lem_orig] = cond_val  # other CONDITION mentions 
+            self.conditions[entity_lem_orig] = cond_val  # medical issues from CONDITION 
 
     def add_parents(self, pedigree):
         """ Fills mother and father attributes if still unknown (0).
@@ -141,19 +133,24 @@ class Person:
 
     def add_sibling(self, pedigree, member_id, amount=1):
         for i in range(amount):
+            print(self.id, member_id)
             if i:
                 member_id = member_id + str(i+1)
-            if member_id != self.id: # exclude oneself present in children list
+            if member_id != self.id: # to exclude oneself from list of children
                 sibling = pedigree.get_member(member_id)
+                print(sibling.id)
                 if sibling not in self.siblings:
                     self.siblings.append(sibling)
+            print('SIB',pedigree.members.keys())
 
     def update_side(self, pedigree, side_lemma, amount=1):
         """ Disambiguates family relation term with parent-side information.
         Updates also siblings information accordingy. 
         """
-        sides = {'mor': {'onkel':'morbror', 'tante':'moster', 'bestemor':'mormor', 'bestefar':'morfar'},
-                 'far': {'onkel':'farbror', 'tante':'faster', 'bestemor':'farmor', 'bestefar':'farfar'}}
+        sides = {'mor': {'onkel':'morbror', 'tante':'moster', 
+                         'bestemor':'mormor', 'bestefar':'morfar'},
+                 'far': {'onkel':'farbror', 'tante':'faster', 
+                         'bestemor':'farmor', 'bestefar':'farfar'}}
         if 'mor' in side_lemma:
             parent = 'mor'
         elif 'far' in side_lemma:
@@ -163,16 +160,19 @@ class Person:
         if parent:
             # Modifier SIDE-FAMILY
             if self.id in sides[parent]:
-                self.id = sides[parent][self.id]
-                #self.add_parents(pedigree) # TO DO: check if needed
-                if self.id.endswith('bror') or self.id.endswith('ster'):
-                    pedigree.get_member(parent).add_sibling(pedigree, self.id, amount) # TO DO: handle when e.g. 'farens bror'
+                disamb_fam = sides[parent][self.id]
+                # make a copy of Person with disabiguated SIDE
+                pedigree.members[disamb_fam] = pedigree.members[self.id]  
+                del pedigree.members[self.id]
+                pedigree.members[disamb_fam].id = disamb_fam
+                pedigree.members[disamb_fam].add_parents(pedigree)
+                if disamb_fam.endswith('bror') or disamb_fam.endswith('ster'):
+                    pedigree.get_member(parent).add_sibling(pedigree, disamb_fam, amount)
                 else:
-                    pedigree.get_member(parent).add_parents(pedigree)
+                    pedigree.get_member(parent).add_parents(pedigree)                
+
             # Related_to FAMILY-SELF/FAMILY -> separate?
             elif self.id in ['fetter', 'kusine']:
-                for p in pedigree.get_member(parent).siblings:
-                    print('\t', p.id)
                 parent_siblings = pedigree.get_member(parent).siblings
                 if len(parent_siblings) == 1 and parent_siblings[0] == 'søster':
                     self.mother = pedigree.get_member(sides[parent]['tante'])
@@ -184,15 +184,6 @@ class Person:
                 print('SIDE undefined for: ', self.id)
         else:
             print('Unknown SIDE: ', side_lemma)
-
-
-
-                #    mother = pedigree.get_member(parent + 'mor') # TO DO: infer if tante or farmor
-                #    # TO DO: update parent member and self's parent ids 
-                #    mother.id = parent + 'mor' 
-                #    pedigree.get_member(mother.id)
-                #    self.mother =  mother.id
-                #    father = pedigree.get_member(parent + 'mor')
 
     def update_relation(self, pedigree):
         pass
@@ -206,13 +197,14 @@ class Person:
 class Pedigree:
     def __init__(self):
         self.id = ''
-        self.other_conditions = []
+        self.conditions = []
         self.members = {}
         self.index_patient = None 
 
     def __str__(self):
         padding = '-'*30
-        header = '{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}'.format('ID','FATHER','MOTHER','GENDER','AFF_STATUS','CONDITIONS')
+        header = '{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}\t{:<10}'.format(
+                'ID','FATHER','MOTHER','GENDER','PHENOTYPE','CONDITIONS')
         out = '{}\n {} pedigree members: \n{}\n{}\n'.format(padding, self.id, padding, header) 
         for member_id in self.members:
             if member_id != 'partner':
@@ -221,9 +213,7 @@ class Pedigree:
 
     def save(self, format='linkage'):
         """ Save a tab-separated format with following info: 
-        pedigree_id, member_id, father_ID, mother_ID, gender, affection_status, 
-        # TO DO: marker_genotypes
-        # TO DO: support also other formats
+        pedigree_id, member_id, father_ID, mother_ID, gender, phenotype
         """
         pass
 
@@ -238,7 +228,7 @@ class Pedigree:
             self.members[person_id] = person
             person.gender = person.get_gender()
             if person.id not in ambiguous_side:
-                person.add_parents(self) # TO DO: adds even if not appearing in text -> remove subsequently?
+                person.add_parents(self)
         return person
 
     def get_family_terms(self):
@@ -265,8 +255,6 @@ class Pedigree:
         relation_info = read_relations(path_to_file)
         fam_terms = self.get_family_terms()
         for line in relation_info:
-            for p in self.get_member('far').siblings:
-                print('\t', p.id)
             relation, entity_tag_orig, entity_tok_orig, \
                 entity_tag_target, entity_tok_target = line
             # Lemmatize
@@ -284,15 +272,11 @@ class Pedigree:
                 if entity_tag_target == 'SELF':
                     person = self.get_member('pasient')
                 elif entity_tag_target == 'FAMILY':
-                    if entity_lem_target in fam_terms: # to skip other words
+                    if entity_lem_target in fam_terms: # to skip any other word
                         person = self.get_member(entity_lem_target)
                         if person.mother and person.father:
                             if entity_lem_target in family_relations[(person.mother.id, person.father.id)]:  #'mor', 'far'
                                 person.add_sibling(self, entity_lem_target, amount)
-                    # TO DO: handle that IDs not appearing in text should be 0 in output, not an id
-                    # TO DO: handle 'barn' partents based on pasient gender
-                    # handle 'mormor', 
-                    # handle 'niese/nevø' partents based on their gender / name
                 else:
                     print('Unusual target for "Holder": ' , entity_tag_target, entity_tok_target)
                 if entity_tag_orig in ['CONDITION', 'EVENT']:
@@ -309,24 +293,21 @@ class Pedigree:
                     pass # TO DO: update member in pedigree (FAMILY's parents / patients' siblings etc.) 
                 #if entity_tag_orig == 'FAMILY':
                 #    self.get_member(entity_lem_orig).update_side(self, '')
-        #for member in self.members:
-        #    if member.id in ambiguous:
-        #         pass # add parents based on SIDE info here?
+
         print(self)
 
 
-    def get_linkage_format(data_folder):
-        # populate(self, path_to_file, nlp)
-        # create each line from info in Person (tab sep) 
-        pass
-
 """
-Ongoing:
+Do next:
+- move update_side to Pedigree
+- move relation to separate function
+- handle other terms (ambiguous and non 'farfar hadde 2 brødre') etc to related to 
 
-To do:
+Other to dos:
 - FAMILY:   
     mor/far for halvbror
     sibling addition handled for: patient and mor/far (not others)
+    family terms not always relative to SELF (pasient) e.g. text2 'Farfar hadde to brødre' 'farens bror'
 - pronouns
     use for updating info on last mentioned Person.id
     use for disambiguating gender for genderless FAMILY / SELF (e.g. barn)
@@ -336,7 +317,11 @@ To do:
 - move global vars not used in Person to Pedigree attribs?
 - process relations in a certain order?
 - check if 'farens bror' annotated as Related_to
-
+OK - duplicate entries
+- add pedigree ID in final LINKAGE format
+- switch defaults to unknown
+- marker_genotypes after phenotype column
+- remove superflous: parents added even if not appearing in text -> remove subsequently when not used
 
 """
 
