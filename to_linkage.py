@@ -199,8 +199,8 @@ class Pedigree:
         # Map to disambiguated if any
         if orig_lemma in self.disamb_members:
             orig_lemma = self.disamb_members[orig_lemma]
-        elif target_lemma in self.disamb_members:
-            target_lemma = self.disamb_members[person.id]
+        if target_lemma in self.disamb_members:
+            target_lemma = self.disamb_members[target_lemma]
         return(orig_lemma, target_lemma)
 
     def get_family_terms(self):
@@ -254,7 +254,6 @@ class Pedigree:
         # Related_to FAMILY-SELF/FAMILY -> separate?
         person = self.get_member(orig_lemma)
         if target_tag == 'SELF': 
-            print(orig_lemma, person.side)
             if person.id in ['fetter', 'kusine'] and person.side:
                 parent_siblings = self.get_member(person.side).siblings
                 if len(parent_siblings) == 1: 
@@ -277,9 +276,9 @@ class Pedigree:
                         person.father = self.get_member('bror')
                 else:
                     print('Ambiguous Related_to: multiple patient siblings') 
-        elif target_tag == 'FAMILY' and person.side:
+        elif target_tag == 'FAMILY': 
             # family term not relative to SELF (patient) TO DO: modify name to reflect relative to patient
-            print('Related_to not handles between: ', orig_lemma, target_lemma)
+            print('Related_to not handled between: ', orig_lemma, target_lemma)
 
     def update_amount():
         pass
@@ -311,7 +310,7 @@ class Pedigree:
             if relation == 'Holder':
                 if target_tag == 'SELF':
                     person = self.get_member('pasient')
-                    self.disamb_members[orig_lemma] = 'pasient'
+                    self.disamb_members[target_lemma] = 'pasient'
                 elif target_tag == 'FAMILY':
                     if target_lemma in fam_terms: # to skip any other word
                         person = self.get_member(target_lemma)
@@ -337,7 +336,6 @@ class Pedigree:
 
 """
 Do next:
-- remove pasient from conditions
 - handle other terms (ambiguous and non 'farfar hadde 2 brødre') etc to related to 
 
 Other to dos:
@@ -365,6 +363,7 @@ Done
 - move update_side to Pedigree
 - duplicate entries
 - move relation to separate function
+- remove pasient from conditions
 
 """
 
