@@ -3,14 +3,15 @@ import os
 
 global variants
 global family_relations
+global sides
 global ambiguous_side
 global gender_info
 
 variants = {'broder': 'bror', 
             'fader':'far',
             'mor' : 'moder', 
-            'fett':'fetter'     # fixes UDPipe tokenization issue
-            }
+            'fett':'fetter',     # fixes UDPipe tokenization issue
+            'Pasient': 'pasient'}
 
 family_relations = {
     ('partner', 'pasient') : ['datter', 'sønn', 'barn'],
@@ -24,12 +25,18 @@ family_relations = {
     ('søster', 'svigerbror') : ['niese', 'nevø'],
     ('svigersøster', 'bror') : ['niese', 'nevø']}
 
+sides = {'mor': {'onkel':'morbror', 'tante':'moster', 
+                 'bestemor':'mormor', 'bestefar':'morfar'},
+         'far': {'onkel':'farbror', 'tante':'faster', 
+                 'bestemor':'farmor', 'bestefar':'farfar'}}
+
 ambiguous_side = ['bestemor', 'bestefar','tante', 'onkel', 'kusine', 'fetter', 'niese', 'nevø']
 gender_info = {'2' : ['mor', 'søster', 'datter', 'tante', 'faster', 'moster',
                       'niese', 'kone', 'hustru', 'kusine'],
                '1' : ['far', 'bror', 'sønn', 'onkel', 'farbror', 'morbror', 
                       'nevø', 'man', 'husbond', 'fetter'],
                '0' : ['barn', 'søsken', 'forelder']}
+
 amounts = {'en':1, 'to':2, 'tre':3, 'fire':4, 'fem':5}
 
 
@@ -51,12 +58,12 @@ def read_relations(path_to_file):
             else:
                 line_elem = line.strip().split("\t")
                 relation = line_elem[1]
-                entity_tag_orig, l_ix_orig, r_ix_orig = line_elem[2].split(",")
-                entity_tok_orig = sent[int(l_ix_orig):int(r_ix_orig)]
-                entity_tag_target, l_ix_target, r_ix_target = line_elem[3].split(",")
-                entity_tok_target = sent[int(l_ix_target):int(r_ix_target)]
-                relation_info.append([relation, entity_tag_orig, entity_tok_orig, 
-                                      entity_tag_target, entity_tok_target])
+                orig_tag, l_ix_orig, r_ix_orig = line_elem[2].split(",")
+                orig_token = sent[int(l_ix_orig):int(r_ix_orig)]
+                target_tag, l_ix_target, r_ix_target = line_elem[3].split(",")
+                target_token = sent[int(l_ix_target):int(r_ix_target)]
+                relation_info.append([relation, orig_tag, orig_token, 
+                                      target_tag, target_token])
     return relation_info
 
 class Person:
@@ -65,6 +72,7 @@ class Person:
         self.father = 0             # 0=unknown
         self.mother = 0             # 0=unknown
         self.siblings = []
+        self.side = None            # 'far' or 'mor'
         self.gender = None          # 0=unknown / 1=male / 2=female
         self.phenotype = 0          # 0=unknown / 1=negative / 2=positive
         self.conditions = {}
@@ -100,24 +108,24 @@ class Person:
                     return int(gender_type)
         return gender
 
-    def get_cond_val(self, entity_lem_orig, non_conditions):
+    def get_cond_val(self, orig_lemma, non_conditions):
         # TO DO: add NEGATION tag
-        if entity_lem_orig in non_conditions:  
+        if orig_lemma in non_conditions:  
             return 1
         return 2
 
-    def add_condition(self, entity_lem_orig):
+    def add_condition(self, orig_lemma):
         """ Parses condition information.
         Distinguishes index conditions from other conditions and
         non-conditions. Only limited lexical variation handling.
         """ 
         non_conditions = ['frisk', 'gen-negativ', 'negativ', 'gravid', 'live']  # TO DO: add terms?
         index_cond_terms =  ['mutasjon', 'genbær']                              # TO DO: add terms?
-        cond_val = self.get_cond_val(entity_lem_orig, non_conditions)
-        if entity_lem_orig in index_cond_terms or entity_lem_orig in non_conditions:
+        cond_val = self.get_cond_val(orig_lemma, non_conditions)
+        if orig_lemma in index_cond_terms or orig_lemma in non_conditions:
             self.phenotype = cond_val            
-        elif entity_lem_orig:
-            self.conditions[entity_lem_orig] = cond_val  # medical issues from CONDITION 
+        elif orig_lemma:
+            self.conditions[orig_lemma] = cond_val  # medical issues from CONDITION 
 
     def add_parents(self, pedigree):
         """ Fills mother and father attributes if still unknown (0).
@@ -133,65 +141,15 @@ class Person:
 
     def add_sibling(self, pedigree, member_id, amount=1):
         for i in range(amount):
-            print(self.id, member_id)
+            #print(self.id, member_id)
             if i:
                 member_id = member_id + str(i+1)
             if member_id != self.id: # to exclude oneself from list of children
                 sibling = pedigree.get_member(member_id)
-                print(sibling.id)
+                #print(sibling.id)
                 if sibling not in self.siblings:
                     self.siblings.append(sibling)
-            print('SIB',pedigree.members.keys())
-
-    def update_side(self, pedigree, side_lemma, amount=1):
-        """ Disambiguates family relation term with parent-side information.
-        Updates also siblings information accordingy. 
-        """
-        sides = {'mor': {'onkel':'morbror', 'tante':'moster', 
-                         'bestemor':'mormor', 'bestefar':'morfar'},
-                 'far': {'onkel':'farbror', 'tante':'faster', 
-                         'bestemor':'farmor', 'bestefar':'farfar'}}
-        if 'mor' in side_lemma:
-            parent = 'mor'
-        elif 'far' in side_lemma:
-            parent = 'far'
-        else:
-            parent = ''
-        if parent:
-            # Modifier SIDE-FAMILY
-            if self.id in sides[parent]:
-                disamb_fam = sides[parent][self.id]
-                # make a copy of Person with disabiguated SIDE
-                pedigree.members[disamb_fam] = pedigree.members[self.id]  
-                del pedigree.members[self.id]
-                pedigree.members[disamb_fam].id = disamb_fam
-                pedigree.members[disamb_fam].add_parents(pedigree)
-                if disamb_fam.endswith('bror') or disamb_fam.endswith('ster'):
-                    pedigree.get_member(parent).add_sibling(pedigree, disamb_fam, amount)
-                else:
-                    pedigree.get_member(parent).add_parents(pedigree)                
-
-            # Related_to FAMILY-SELF/FAMILY -> separate?
-            elif self.id in ['fetter', 'kusine']:
-                parent_siblings = pedigree.get_member(parent).siblings
-                if len(parent_siblings) == 1 and parent_siblings[0] == 'søster':
-                    self.mother = pedigree.get_member(sides[parent]['tante'])
-                    self.father = pedigree.get_member('onkel')
-                else: # if ambiguous, brother assumed by default for parent
-                    self.mother = pedigree.get_member('tante')
-                    self.father = pedigree.get_member(sides[parent]['onkel'])
-            else:
-                print('SIDE undefined for: ', self.id)
-        else:
-            print('Unknown SIDE: ', side_lemma)
-
-    def update_relation(self, pedigree):
-        pass
-
-    def update_amount():
-        pass
-        # duplicate entry
-        # when adding parents, if parents 0
+            #print('SIB',pedigree.members.keys())
                 
 
 class Pedigree:
@@ -199,6 +157,7 @@ class Pedigree:
         self.id = ''
         self.conditions = []
         self.members = {}
+        self.disamb_members = {}
         self.index_patient = None 
 
     def __str__(self):
@@ -231,6 +190,19 @@ class Pedigree:
                 person.add_parents(self)
         return person
 
+    def normalize_lemma(self, orig_lemma, orig_tag, target_lemma, target_tag):
+        # Standardize variants 
+        if orig_lemma in variants and orig_tag in ['FAMILY', 'SELF']:
+            orig_lemma = variants[orig_lemma]
+        if target_lemma in variants and target_tag in ['FAMILY', 'SELF']:
+            target_lemma = variants[target_lemma]
+        # Map to disambiguated if any
+        if orig_lemma in self.disamb_members:
+            orig_lemma = self.disamb_members[orig_lemma]
+        elif target_lemma in self.disamb_members:
+            target_lemma = self.disamb_members[person.id]
+        return(orig_lemma, target_lemma)
+
     def get_family_terms(self):
         m_to_ch = {mother:children for (mother,father),children in family_relations.items()}
         f_to_ch = {father:children for (mother,father),children in family_relations.items()}
@@ -248,59 +220,124 @@ class Pedigree:
         # all father mother IDs also as separate row
         # no repetitions
 
+    def update_side(self, person, side_lemma, amount=1):
+        """ Disambiguates family relation term with parent-side information.
+        Updates also siblings information accordingy. 
+        Handles Modifier relation with SIDE + FAMILY entities.
+        """
+        if 'mor' in side_lemma:
+            parent = 'mor'
+        elif 'far' in side_lemma:
+            parent = 'far'
+        else:
+            parent = ''
+        if parent:
+            person.side = parent
+            print(person.id, person.side)
+            # Modifier SIDE-FAMILY
+            if person.id in sides[parent]:
+                disamb_fam = sides[parent][person.id]
+                # make a copy of Person with disabiguated SIDE
+                self.members[disamb_fam] = self.members[person.id]  
+                self.disamb_members[person.id] = disamb_fam
+                del self.members[person.id]
+                self.members[disamb_fam].id = disamb_fam
+                self.members[disamb_fam].add_parents(self)
+                if disamb_fam.endswith('bror') or disamb_fam.endswith('ster'):
+                    self.get_member(parent).add_sibling(self, disamb_fam, amount)
+                else:
+                    self.get_member(parent).add_parents(self)             
+        else:
+            print('Unknown SIDE: ', side_lemma)
+
+    def update_related(self, orig_lemma, target_tag, target_lemma):
+        # Related_to FAMILY-SELF/FAMILY -> separate?
+        person = self.get_member(orig_lemma)
+        if target_tag == 'SELF': 
+            print(orig_lemma, person.side)
+            if person.id in ['fetter', 'kusine'] and person.side:
+                parent_siblings = self.get_member(person.side).siblings
+                if len(parent_siblings) == 1: 
+                    if parent_siblings[0] == 'søster':
+                        person.mother = self.get_member(sides[person.side]['tante'])
+                        person.father = self.get_member('onkel')
+                    else:
+                        person.mother = self.get_member('tante')
+                        person.father = self.get_member(sides[person.side]['onkel'])
+                else:
+                    print('Ambiguous Related_to: multiple parent siblings')
+            elif person.id in ['nevø', 'niese']:
+                patient_siblings = self.get_member(target_lemma).siblings
+                if len(patient_siblings) == 1: 
+                    if parent_siblings[0] == 'søster':
+                        person.mother = self.get_member('søster')
+                        person.father = self.get_member('svigerbror')
+                    else:
+                        person.mother = self.get_member('svigersøster')
+                        person.father = self.get_member('bror')
+                else:
+                    print('Ambiguous Related_to: multiple patient siblings') 
+        elif target_tag == 'FAMILY' and person.side:
+            # family term not relative to SELF (patient) TO DO: modify name to reflect relative to patient
+            print('Related_to not handles between: ', orig_lemma, target_lemma)
+
+    def update_amount():
+        pass
+        # duplicate entry
+        # when adding parents, if parents 0
+
+
     def populate(self, path_to_file, nlp):
         """ Creates and maps entity and relation tag information 
         to members attribute (Person instances). 
         """
         relation_info = read_relations(path_to_file)
         fam_terms = self.get_family_terms()
+        print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format('relation'.upper(), 'orig_lemma'.upper(), '(orig_tag)'.upper(), 
+                                            'target_lemma'.upper(), '(target_tag)'.upper()))
+        print('-'*65)
         for line in relation_info:
-            relation, entity_tag_orig, entity_tok_orig, \
-                entity_tag_target, entity_tok_target = line
+            relation, orig_tag, orig_token, \
+                target_tag, target_token = line
+            
             # Lemmatize
-            entity_lem_target = [token.lemma_ for token in nlp(entity_tok_target)][0]
-            entity_lem_orig = [token.lemma_ for token in nlp(entity_tok_orig)][0]
-            print(relation, entity_tok_orig, entity_tok_target) 
-            # Standardize variants 
-            if entity_lem_orig in variants and entity_tok_orig == 'FAMILY':
-                entity_lem_orig = variants[entity_lem_orig]
-            if entity_lem_target in variants and entity_tag_target == 'FAMILY':
-                entity_lem_target = variants[entity_lem_target]
+            target_lemma = [token.lemma_ for token in nlp(target_token)][0]
+            orig_lemma = [token.lemma_ for token in nlp(orig_token)][0]
+            orig_lemma, target_lemma = self.normalize_lemma(orig_lemma, orig_tag, target_lemma, target_tag)
+            print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format(relation, orig_lemma, '('+orig_tag+')', target_lemma, '('+target_tag+')'))
+            
             amount = 1 # TO DO: get from AMOUNT tag
             # Collect family member names and their conditions 
             if relation == 'Holder':
-                if entity_tag_target == 'SELF':
+                if target_tag == 'SELF':
                     person = self.get_member('pasient')
-                elif entity_tag_target == 'FAMILY':
-                    if entity_lem_target in fam_terms: # to skip any other word
-                        person = self.get_member(entity_lem_target)
+                    self.disamb_members[orig_lemma] = 'pasient'
+                elif target_tag == 'FAMILY':
+                    if target_lemma in fam_terms: # to skip any other word
+                        person = self.get_member(target_lemma)
                         if person.mother and person.father:
-                            if entity_lem_target in family_relations[(person.mother.id, person.father.id)]:  #'mor', 'far'
-                                person.add_sibling(self, entity_lem_target, amount)
+                            if target_lemma in family_relations[(person.mother.id, person.father.id)]:  #'mor', 'far'
+                                person.add_sibling(self, target_lemma, amount)
                 else:
-                    print('Unusual target for "Holder": ' , entity_tag_target, entity_tok_target)
-                if entity_tag_orig in ['CONDITION', 'EVENT']:
-                    person.add_condition(entity_lem_orig)
-                if entity_tag_orig == 'INDEX':
-                    self.index_patient = entity_lem_target
+                    print('Unusual target for "Holder": ' , target_tag, target_token)
+                if orig_tag in ['CONDITION', 'EVENT']:
+                    person.add_condition(orig_lemma)
+                if orig_tag == 'INDEX':
+                    self.index_patient = target_lemma
             elif relation == 'Modifier':
-                if entity_tag_orig == 'SIDE':
-                    self.get_member(entity_lem_target).update_side(self, entity_lem_orig)
+                if orig_tag == 'SIDE':
+                    self.update_side(self.get_member(target_lemma), orig_lemma)
                 # AMOUNT
                 # NEG
             elif relation == 'Related_to':
-                if entity_tag_target == 'FAMILY':
-                    pass # TO DO: update member in pedigree (FAMILY's parents / patients' siblings etc.) 
-                #if entity_tag_orig == 'FAMILY':
-                #    self.get_member(entity_lem_orig).update_side(self, '')
-
+                self.update_related(orig_lemma, target_tag, target_lemma)
+            print('\n')
         print(self)
 
 
 """
 Do next:
-- move update_side to Pedigree
-- move relation to separate function
+- remove pasient from conditions
 - handle other terms (ambiguous and non 'farfar hadde 2 brødre') etc to related to 
 
 Other to dos:
@@ -317,15 +354,18 @@ Other to dos:
 - move global vars not used in Person to Pedigree attribs?
 - process relations in a certain order?
 - check if 'farens bror' annotated as Related_to
-OK - duplicate entries
 - add pedigree ID in final LINKAGE format
 - switch defaults to unknown
 - marker_genotypes after phenotype column
 - remove superflous: parents added even if not appearing in text -> remove subsequently when not used
 
+
+Done
+
+- move update_side to Pedigree
+- duplicate entries
+- move relation to separate function
+
 """
 
-#Info:
-# https://www.broadinstitute.org/haploview/input-file-formats
-# http://csg.sph.umich.edu/abecasis/merlin/tour/input_files.html
 

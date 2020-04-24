@@ -24,7 +24,7 @@ nlp = spacy_udpipe.load('nb')
 for rel_f in sorted(os.listdir(data_folder)):
     file_name, ext = tuple(rel_f.split('.'))  
     #if ext == ".uio":
-    if rel_f == 'example2.uio': # dev version
+    if rel_f == 'example1.uio': # dev version
         path_to_file = os.path.join(data_folder, rel_f)
         ped = Pedigree()
         ped.id = file_name 
