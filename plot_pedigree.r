@@ -7,11 +7,13 @@ plot_pedigree <- function(args) {
 	pd_df <- as.data.frame(pd)					# transform to dataframe object
 	attach(pd_df) 			 					# attach R object to search path				
 	ped <- pedigree(id,fid,mid,sex,aff) 		# convert to pedigree obj	
-	par(xpd = TRUE)	 							# set graph params
+	options(device="png")
+	par(xpd = TRUE)	 							# restrict plot to plotting region
 	png(file=args[2])					 		# get file name
 	names <- strsplit(args[3], ",")[[1]] 		# need to index first element to get list
 	id2names <- paste(ped$id, names, sep = "\n")# add family member names to IDs
 	plot(ped,id=id2names) 						# create plot
+	pdf(NULL)
 }
 
 # Parse arguments

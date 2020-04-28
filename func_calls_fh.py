@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 if 'ildiko' in os.getcwd():
     venv_dir = '/Users/ildikop/Documents/projects/UiO-BigMed/bm_venv'
@@ -7,7 +8,8 @@ if 'ildiko' in os.getcwd():
          dict(__file__=activate_script))
 
 import spacy_udpipe
-from to_linkage import Pedigree, Person
+from Person import Person
+from Pedigree import Pedigree
 
 data_folder = '/Users/ildikop/Documents/projects/UiO-BigMed/NorSynthClinical/pal_annotate'
 
@@ -17,17 +19,9 @@ gender = person.get_gender()
 person.add_condition('mutasjon')
 person.add_condition('bla')
 #print(person)
-
 #print(ped)
 
-nlp = spacy_udpipe.load('nb')
-for rel_f in sorted(os.listdir(data_folder)):
-    file_name, ext = tuple(rel_f.split('.'))  
-    #if ext == ".uio":
-    if rel_f == 'example1.uio': # dev version
-        path_to_file = os.path.join(data_folder, rel_f)
-        ped = Pedigree()
-        ped.id = file_name 
-        ped.populate(path_to_file, nlp)
-
+# Run R script to plot from LINKAGE format (with the kinship2 R package)
+# From Sublime
+#subprocess.call("/Users/ildikop/Documents/projects/UiO-BigMed/NorSynthClinical/to_linkage/test1.r") 
 
