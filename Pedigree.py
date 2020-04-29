@@ -1,4 +1,6 @@
 
+import os
+import codecs
 from utils import read_relations
 from Person import Person
 from constants import *
@@ -9,7 +11,7 @@ class Pedigree:
         self.conditions = []
         self.members = {}
         self.disamb_members = {}
-        self.index_patient = None # not required for LINKAGE 
+        self.index_patient = None # not required for LINKAGE, used to set phenotype value to 1 
         self.patient_gender = 0
         self.auto_members = []
 
@@ -23,11 +25,29 @@ class Pedigree:
                 out += self.members[member_id].__str__() + '\n'
         return out
 
-    def save(self, format='linkage'):
+    def save(self, path_to_file, out_folder, format='linkage'):
         """ Save a tab-separated format with following info: 
         pedigree_id, member_id, father_ID, mother_ID, gender, phenotype
         """
-        pass
+        print(self.id_mapping)
+        self.members['pasient'].gender = 1 # dev version fix
+        self.members['partner'].gender = 2 # dev version fix
+        out_f = os.path.split(path_to_file)[1].split('.')[0]+'.ped'
+        out = '"id" "fid" "mid" "sex" "aff" \n'
+        for name, member in self.members.items():
+            mother = 0
+            if member.mother:
+                mother = self.id_mapping.get(member.mother.id)
+            father = 0
+            if member.father:
+                father = self.id_mapping.get(member.father.id)
+            member_info = "{} {} {} {} {}\n".format(self.id_mapping[name], father, mother,
+                                                    member.gender, member.phenotype)
+            out += member_info
+        out += '\n'
+        with codecs.open(os.path.join(out_folder, out_f), 'w', 'utf-8') as f:
+            f.write(out)
+
 
     def get_member(self, person_id):   
         """ Add member if it does not exist yet, return
@@ -38,7 +58,7 @@ class Pedigree:
         else:
             person = Person(person_id)
             self.members[person_id] = person
-            person.gender = person.get_gender()
+            person.get_gender()
             if person.id not in ambiguous_side:
                 person.add_parents(self)
         return person
@@ -94,7 +114,7 @@ class Pedigree:
         self.members[new_member_id].siblings.append(self.members[orig_lemma]) # TO DO: check whether overgenerates
         self.members[orig_lemma].siblings.append(self.members[new_member_id]) # TO DO: check whether overgenerates
 
-    def update_side(self, person, side_lemma, amount=1):
+    def update_side(self, person, side_lemma):
         """ Disambiguates family relation term with parent-side information.
         Updates also siblings information accordingy. 
         Handles Modifier relation with SIDE + FAMILY entities.
@@ -118,7 +138,7 @@ class Pedigree:
                 self.members[disamb_fam].id = disamb_fam
                 self.members[disamb_fam].add_parents(self)
                 if disamb_fam.endswith('bror') or disamb_fam.endswith('ster'):
-                    self.get_member(parent).add_sibling(self, disamb_fam, amount)
+                    self.get_member(parent).add_sibling(self, disamb_fam)
                 else:
                     self.get_member(parent).add_parents(self)
             self.update_amount(person.id, 'FAMILY', person.amount)             
@@ -197,9 +217,11 @@ class Pedigree:
 
     def convert_ids(self):
         self.id_mapping = {}
+        for ix, (name, info) in enumerate(self.members.items()):
+            self.id_mapping[name] = ix+1
         # TO DO: finish
 
-    def populate(self, path_to_file, nlp):
+    def populate(self, path_to_file, nlp, out_dir):
         """ Creates and maps entity and relation tag information 
         to members attribute (Person instances). 
         """
@@ -216,12 +238,11 @@ class Pedigree:
             # Lemmatize
             target_lemma = [token.lemma_ for token in nlp(target_token)][0]
             orig_lemma = [token.lemma_ for token in nlp(orig_token)][0]
-            orig_lemma, target_lemma = self.normalize_lemma(orig_lemma, orig_tag, target_lemma, target_tag)
-            print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format(relation, orig_lemma, '('+orig_tag+')', 
-                                                          target_lemma, '('+target_tag+')'))
-            #print(self.members.keys())
-
-            amount = 1 # TO DO: get from AMOUNT tag
+            orig_lemma, target_lemma = self.normalize_lemma(orig_lemma, orig_tag, 
+                                                            target_lemma, target_tag)
+            print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format(relation, orig_lemma, 
+                                                          '('+orig_tag+')', target_lemma, 
+                                                          '('+target_tag+')'))
             # Collect family member names and their conditions 
             if relation == 'Holder':
                 if target_tag == 'SELF':
@@ -233,7 +254,7 @@ class Pedigree:
                         person = self.get_member(target_lemma)
                         if person.mother and person.father:
                             if target_lemma in family_relations[(person.mother.id, person.father.id)]: 
-                                person.add_sibling(self, target_lemma, amount)
+                                person.add_sibling(self, target_lemma)
                 else:
                     print('Unusual target for "Holder": ' , target_tag, target_token)
                 if orig_tag in ['CONDITION', 'EVENT']:
@@ -250,20 +271,9 @@ class Pedigree:
                 self.update_related(orig_lemma, target_tag, target_lemma)
             print('\n')
         self.members['pasient'].gender = self.patient_gender
+        if self.index_patient in self.members:
+            self.members[self.index_patient].phenotype = 1
+        self.convert_ids()
+        self.save(path_to_file, out_dir)
         print(self)
-
-    def remove_superflous(self):
-        # remove lines with members not used elsewhere
-        # TO DO: solve differently
-        mothers = [self.members[member].mother.id for member in self.members if self.members[member].mother]
-        fathers = [self.members[member].father.id for member in self.members if self.members[member].father]
-        parents = mothers+fathers
-        superfluous_members = []
-        for member, member_info in self.members.items():
-            parents.remove(member)
-            if member not in parents and member in self.auto_members:
-                superfluous_members.append(member)
-        print('SL: ',superfluous_members)
-        for sm in superfluous_members:
-            del self.members[sm]
         

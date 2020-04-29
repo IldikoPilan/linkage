@@ -24,3 +24,6 @@ def read_relations(path_to_file):
                 relation_info.append([relation, orig_tag, orig_token, 
                                       target_tag, target_token])
     return relation_info
+
+
+        

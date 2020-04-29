@@ -3,6 +3,8 @@ global family_relations
 global sides
 global ambiguous_side
 global gender_info
+global index_cond_terms
+global non_conditions
 
 variants = {'broder': 'bror', 
             'fader':'far',
@@ -28,10 +30,14 @@ sides = {'mor': {'onkel':'morbror', 'tante':'moster',
                  'bestemor':'farmor', 'bestefar':'farfar'}}
 
 ambiguous_side = ['bestemor', 'bestefar','tante', 'onkel', 'kusine', 'fetter', 'niese', 'nevø']
+
 gender_info = {'2' : ['mor', 'søster', 'datter', 'tante', 'faster', 'moster',
                       'niese', 'kone', 'hustru', 'kusine'],
                '1' : ['far', 'bror', 'sønn', 'onkel', 'farbror', 'morbror', 
                       'nevø', 'man', 'husbond', 'fetter'],
-               '0' : ['barn', 'søsken', 'forelder']}
+               '3' : ['barn', 'søsken', 'forelder']}
+
+non_conditions = ['frisk', 'gen-negativ', 'negativ', 'gravid', 'live']  # TO DO: add terms?
+index_cond_terms =  ['mutasjon', 'genbær', 'syk']                       # TO DO: add terms?
 
 amounts = {'en':1, 'to':2, 'tre':3, 'fire':4, 'fem':5}
