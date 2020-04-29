@@ -2,3 +2,5 @@
 .DS_Store
 Thumbs.db
 __pycache__
+examples
+func_calls_fh
