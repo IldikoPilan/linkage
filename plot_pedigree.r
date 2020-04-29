@@ -3,7 +3,7 @@
 library(kinship2)
 
 plot_pedigree <- function(args) {
-	pd <- read.table(args[1], header=T) 		# indexing starts with 1				
+	pd <- read.table(args[1], header=T) 		# indexing starts with 1
 	pd_df <- as.data.frame(pd)					# transform to dataframe object
 	print(pd_df)
 	attach(pd_df) 			 					# attach R object to search path				

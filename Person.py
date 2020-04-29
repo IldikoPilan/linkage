@@ -7,7 +7,7 @@ class Person:
         self.mother = 0             # 0=unknown
         self.siblings = []
         self.side = None            # 'far' or 'mor'
-        self.amount = 1
+        self.amount = 1             # to track multiple members of the same type
         self.gender = 3             # 1=male / 2=female / 3=unknown
         self.phenotype = 'NA'       # NA=unknown / 0=negative / 1=positive
         self.conditions = []

@@ -12,7 +12,6 @@ class Pedigree:
         self.members = {}
         self.disamb_members = {}
         self.index_patient = None # not required for LINKAGE, used to set phenotype value to 1 
-        self.patient_gender = 0
         self.auto_members = []
 
     def __str__(self):
@@ -29,11 +28,8 @@ class Pedigree:
         """ Save a tab-separated format with following info: 
         pedigree_id, member_id, father_ID, mother_ID, gender, phenotype
         """
-        print(self.id_mapping)
-        self.members['pasient'].gender = 1 # dev version fix
-        self.members['partner'].gender = 2 # dev version fix
         out_f = os.path.split(path_to_file)[1].split('.')[0]+'.ped'
-        out = '"id" "fid" "mid" "sex" "aff" \n'
+        out = '"id"\t"fid"\t"mid"\t"sex"\t"aff"\t"name"\n'
         for name, member in self.members.items():
             mother = 0
             if member.mother:
@@ -41,13 +37,12 @@ class Pedigree:
             father = 0
             if member.father:
                 father = self.id_mapping.get(member.father.id)
-            member_info = "{} {} {} {} {}\n".format(self.id_mapping[name], father, mother,
-                                                    member.gender, member.phenotype)
+            member_info = "{}\t{}\t{}\t{}\t{}\tPer:{}\n".format(self.id_mapping[name], father, mother,
+                                                    member.gender, member.phenotype, name)
             out += member_info
         out += '\n'
         with codecs.open(os.path.join(out_folder, out_f), 'w', 'utf-8') as f:
             f.write(out)
-
 
     def get_member(self, person_id):   
         """ Add member if it does not exist yet, return
@@ -90,29 +85,24 @@ class Pedigree:
         return fam_terms
 
     def get_patient_gender(self, lemma, tag):
-        """ Infers patient's gender based on pronouns tagged as SELF
-        if it hasn't been inferred yet.
-        Does not assume heterosexual couples (i.e. no inference from partner's gender).
+        """ Infers patient's gender based on pronouns tagged as SELF.
+        LINKAGE format requires biological parents (i.e. heterosexual couples).
         """
-        if not self.get_member('pasient').gender:
+        if self.get_member('pasient').gender == 3:
             if lemma in ['han', 'hans']:
-                self.patient_gender = 1
+                self.members['pasient'].gender = 1
             elif lemma in ['hun', 'hennes']:            
-                self.patient_gender = 2
+                self.members['pasient'].gender = 2
 
-    def check_format():
-        pass
-        # ensure correct values
-        # all father mother IDs also as separate row
-        # no repetitions
-
-    def copy_member_info(self, orig_lemma, new_member_id):
-        self.members[new_member_id].mother = self.members[orig_lemma].mother
-        self.members[new_member_id].father = self.members[orig_lemma].father
-        self.members[new_member_id].gender = self.members[orig_lemma].gender
-        self.members[new_member_id].siblings = self.members[orig_lemma].siblings
-        self.members[new_member_id].siblings.append(self.members[orig_lemma]) # TO DO: check whether overgenerates
-        self.members[orig_lemma].siblings.append(self.members[new_member_id]) # TO DO: check whether overgenerates
+    def copy_member_info(self, orig_member_id, new_member_id, add_all=True):
+        self.members[new_member_id].mother = self.members[orig_member_id].mother
+        self.members[new_member_id].father = self.members[orig_member_id].father
+        self.members[new_member_id].gender = self.members[orig_member_id].gender
+        if add_all: # avoid overwriting in case SUBSET 
+            self.members[new_member_id].phenotype = self.members[orig_member_id].phenotype
+        self.members[new_member_id].siblings = self.members[orig_member_id].siblings
+        self.members[new_member_id].siblings.append(self.members[orig_member_id]) # TO DO: check whether overgenerates
+        self.members[orig_member_id].siblings.append(self.members[new_member_id]) # TO DO: check whether overgenerates
 
     def update_side(self, person, side_lemma):
         """ Disambiguates family relation term with parent-side information.
@@ -127,13 +117,14 @@ class Pedigree:
             parent = ''
         if parent:
             person.side = parent
-            print(person.id, person.side)
             # Modifier SIDE-FAMILY
             if person.id in sides[parent]:
                 disamb_fam = sides[parent][person.id]
                 # make a copy of Person with disabiguated SIDE
                 self.members[disamb_fam] = self.members[person.id]  
                 self.disamb_members[person.id] = disamb_fam
+                if self.index_patient == person.id:
+                    self.index_patient = disamb_fam
                 del self.members[person.id]
                 self.members[disamb_fam].id = disamb_fam
                 self.members[disamb_fam].add_parents(self)
@@ -179,7 +170,7 @@ class Pedigree:
 
     def update_amount(self, orig_lemma, orig_tag, target_lemma, target_tag='AMOUNT'):
         """ Multiplies a member type based on AMOUNT and copies information
-            available up to that point.
+            available up to that point. (Additional info copied later in .populate())
             Handles Modifier relation with FAMILY - AMOUNT (regardless of entity order). 
         """ 
         # Handle any entity tag order
@@ -215,6 +206,10 @@ class Pedigree:
             pass 
             # TO DO: handle CONDITION / EVENT
 
+    def update_neg():
+        # COND / EVENT
+        # FAMILY
+
     def convert_ids(self):
         self.id_mapping = {}
         for ix, (name, info) in enumerate(self.members.items()):
@@ -227,10 +222,10 @@ class Pedigree:
         """
         relation_info = read_relations(path_to_file)
         fam_terms = self.get_family_terms()
-        print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format('relation'.upper(), 'orig_lemma'.upper(), 
-                                                      '(orig_tag)'.upper(), 'target_lemma'.upper(), 
-                                                      '(target_tag)'.upper()))
-        print('-'*65)
+        #print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format('relation'.upper(), 'orig_lemma'.upper(), 
+        #                                              '(orig_tag)'.upper(), 'target_lemma'.upper(), 
+        #                                              '(target_tag)'.upper()))
+        #print('-'*65)
         for line in relation_info:
             relation, orig_tag, orig_token, \
                 target_tag, target_token = line
@@ -240,9 +235,9 @@ class Pedigree:
             orig_lemma = [token.lemma_ for token in nlp(orig_token)][0]
             orig_lemma, target_lemma = self.normalize_lemma(orig_lemma, orig_tag, 
                                                             target_lemma, target_tag)
-            print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format(relation, orig_lemma, 
-                                                          '('+orig_tag+')', target_lemma, 
-                                                          '('+target_tag+')'))
+            #print('{:<15}{:<15}{:<13}{:<15}{:<10}'.format(relation, orig_lemma, 
+            #                                              '('+orig_tag+')', target_lemma, 
+            #                                              '('+target_tag+')'))
             # Collect family member names and their conditions 
             if relation == 'Holder':
                 if target_tag == 'SELF':
@@ -269,11 +264,32 @@ class Pedigree:
                 # NEG
             elif relation == 'Related_to':
                 self.update_related(orig_lemma, target_tag, target_lemma)
-            print('\n')
-        self.members['pasient'].gender = self.patient_gender
+            #print('\n')
+        # copy info for members added with AMOUNT
+        print('fetter nr: ', self.members['fetter'].amount)
+        print(self.members['fetter'].phenotype)
+        print(self.members['fetter2'].phenotype)
+        for member in self.members:
+            m_cnt = self.members[member].amount 
+            if m_cnt > 1:
+                for i in range(1,m_cnt):
+                    self.copy_member_info(member, member+str(i+1), add_all=False) # skip CONDITION update
+        print(self.members['fetter'].phenotype)
+        print(self.members['fetter2'].phenotype)
+        # infer (biological) partner's gender
+        if self.members['pasient'].gender == 1:
+            self.members['partner'].gender = 2 
+        elif self.members['pasient'].gender == 2:
+            self.members['partner'].gender = 1
+        # infer phenoype from INDEX 
         if self.index_patient in self.members:
             self.members[self.index_patient].phenotype = 1
         self.convert_ids()
         self.save(path_to_file, out_dir)
-        print(self)
+        #print(self)
+
+    def check_format():
+        pass
+        # ensure correct values (eg. mothers are female, fathers are male)
+        # all father mother IDs also as separate row
         
