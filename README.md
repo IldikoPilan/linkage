@@ -8,8 +8,8 @@ This work was carried out as part of [BigMed](https://bigmed.no/) and it was dis
 
 ## Prerequisites
 
-R installed
-[kinship2](https://cran.r-project.org/web/packages/kinship2/index.html) installed
+- R installed
+- [kinship2](https://cran.r-project.org/web/packages/kinship2/index.html) installed
 
 ## Python dependencies
 
